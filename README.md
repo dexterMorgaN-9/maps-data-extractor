@@ -23,7 +23,6 @@ Icons go in `icons/icon16.png`, `icons/icon48.png`, `icons/icon128.png`. Extensi
 Data lives in `chrome.storage.local` so closing the popup loses nothing. Duplicate URLs are skipped on re-runs.
 
 ## files
-
 ```
 ├── manifest.json   MV3 config
 ├── popup.html      UI
@@ -32,9 +31,7 @@ Data lives in `chrome.storage.local` so closing the popup loses nothing. Duplica
 ├── background.js   service worker, storage relay
 └── icons/
 ```
-
 ## permissions
-
 | permission | why |
 |---|---|
 | `activeTab` | check if current tab is Maps |
@@ -43,9 +40,7 @@ Data lives in `chrome.storage.local` so closing the popup loses nothing. Duplica
 | `host_permissions` `google.com/maps/*` | scope content script to Maps only |
 
 ## notes
-
 Selectors in `content.js` target the current Maps DOM. If Google ships a markup change they'll need updating.
 
 ## license
-
 MIT
