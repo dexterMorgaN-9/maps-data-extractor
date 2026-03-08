@@ -1,17 +1,14 @@
-// Background service worker
-
 chrome.runtime.onInstalled.addListener(() => {
-  console.log('Maps Data Extractor installed!');
-  
   chrome.storage.local.set({
     collectedData: [],
-    isCollecting: false
+    isCollecting: false,
   });
 });
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.action === 'dataCollected') {
-    chrome.runtime.sendMessage(message);
+chrome.runtime.onMessage.addListener((msg, sender, sendres) => {
+  if (msg.action === 'dataCollected' && msg.data) {
+    chrome.storage.local.set({ collectedData: msg.data });
+    chrome.runtime.sendMessage(msg).catch(() => {});
   }
   return true;
 });

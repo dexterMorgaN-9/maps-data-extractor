@@ -1,175 +1,137 @@
-let isCollecting = false;
-let collectedData = [];
+let running = false;
+let items   = [];
 
-// Load data when popup opens
-document.addEventListener('DOMContentLoaded', async () => {
-  await loadData();
-  checkIfOnMaps();
-});
+const cnt        = document.getElementById('collectedCount');
+const stat_txt   = document.getElementById('statusText');
+const indicator  = document.getElementById('collectingIndicator');
+const toggle_btn = document.getElementById('toggleCollecting');
+const toggle_txt = document.getElementById('toggleText');
+const datalist   = document.getElementById('dataList');
 
-// Check if user is on Google Maps
-async function checkIfOnMaps() {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  const warning = document.getElementById('notOnMaps');
-  
-  if (!tab.url || !tab.url.includes('google.com/maps')) {
-    warning.classList.add('show');
-    document.getElementById('toggleCollecting').disabled = true;
-  } else {
-    warning.classList.remove('show');
-    document.getElementById('toggleCollecting').disabled = false;
-  }
+function esc(text) {
+  const d = document.createElement('div');
+  d.textContent = String(text);
+  return d.innerHTML;
 }
 
-// Load collected data from storage
-async function loadData() {
-  const result = await chrome.storage.local.get(['collectedData', 'isCollecting']);
-  collectedData = result.collectedData || [];
-  isCollecting = result.isCollecting || false;
-  
-  updateUI();
+function esc_csv(val) {
+  val = String(val).trim();
+  if (val.includes(',') || val.includes('"') || val.includes('\n')) {
+    return `"${val.replace(/"/g, '""')}"`;
+  }
+  return val;
 }
 
-// Update UI with current state
-function updateUI() {
-  document.getElementById('collectedCount').textContent = collectedData.length;
-  document.getElementById('statusText').textContent = isCollecting ? 'Active' : 'Ready';
-  
-  const indicator = document.getElementById('collectingIndicator');
-  const toggleBtn = document.getElementById('toggleCollecting');
-  const toggleText = document.getElementById('toggleText');
-  
-  if (isCollecting) {
-    indicator.classList.add('active');
-    toggleText.textContent = 'Stop Collecting';
-    toggleBtn.style.background = 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)';
-  } else {
-    indicator.classList.remove('active');
-    toggleText.textContent = 'Start Collecting';
-    toggleBtn.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
-  }
-  
-  updateDataList();
-}
-
-// Update the data list display
-function updateDataList() {
-  const dataList = document.getElementById('dataList');
-  
-  if (collectedData.length === 0) {
-    dataList.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-state-icon">📍</div>
-        <div>No data collected yet</div>
-      </div>
-    `;
-    return;
-  }
-  
-  dataList.innerHTML = collectedData.map(business => `
-    <div class="data-item">
-      <div class="data-item-name">${business.name}</div>
-      <div class="data-item-rating">⭐ ${business.rating || 'N/A'} ${business.reviews ? `(${business.reviews} reviews)` : ''}</div>
-    </div>
-  `).join('');
-}
-
-// Toggle collecting mode
-document.getElementById('toggleCollecting').addEventListener('click', async () => {
-  isCollecting = !isCollecting;
-  
-  await chrome.storage.local.set({ isCollecting });
-  
-  // Send message to content script
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  chrome.tabs.sendMessage(tab.id, { 
-    action: isCollecting ? 'startCollecting' : 'stopCollecting' 
-  });
-  
-  updateUI();
-});
-
-// Export to CSV
-document.getElementById('exportCSV').addEventListener('click', () => {
-  if (collectedData.length === 0) {
-    alert('No data to export!');
-    return;
-  }
-  
-  const csv = convertToCSV(collectedData);
-  downloadFile(csv, 'google-maps-data.csv', 'text/csv');
-});
-
-// Export to Excel
-document.getElementById('exportExcel').addEventListener('click', () => {
-  if (collectedData.length === 0) {
-    alert('No data to export!');
-    return;
-  }
-  
-  const csv = convertToCSV(collectedData);
-  downloadFile(csv, 'google-maps-data.xlsx', 'application/vnd.ms-excel');
-});
-
-// Clear all data
-document.getElementById('clearData').addEventListener('click', async () => {
-  if (confirm('Are you sure you want to clear all collected data?')) {
-    collectedData = [];
-    await chrome.storage.local.set({ collectedData: [] });
-    updateUI();
-  }
-});
-
-// Convert data to CSV format
-function convertToCSV(data) {
-  const headers = ['Name', 'Rating', 'Reviews', 'Category', 'Address', 'Phone', 'Website', 'URL'];
+function mkcsv(data) {
+  const headers = ['BusinessName', 'Category', 'Phone', 'Website', 'Claimed', 'Maps URL'];
   const rows = data.map(item => [
-    escapeCsv(item.name || ''),
-    item.rating || '',
-    item.reviews || '',
-    escapeCsv(item.category || ''),
-    escapeCsv(item.address || ''),
-    escapeCsv(item.phone || ''),
-    escapeCsv(item.website || ''),
-    escapeCsv(item.url || '')
-  ]);
-  
-  const csvContent = [
-    headers.join(','),
-    ...rows.map(row => row.join(','))
-  ].join('\n');
-  
-  return csvContent;
+    item.name     || 'N/A',
+    item.category || 'N/A',
+    item.phone    || 'N/A',
+    item.website  || 'N/A',
+    item.claimed  || 'N/A',
+    item.url      || 'N/A',
+  ].map(esc_csv));
+  return '\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
 }
 
-// Escape CSV values
-function escapeCsv(value) {
-  if (value.includes(',') || value.includes('"') || value.includes('\n')) {
-    return `"${value.replace(/"/g, '""')}"`;
-  }
-  return value;
-}
-
-// Download file
-function downloadFile(content, filename, mimeType) {
-  const blob = new Blob([content], { type: mimeType });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
+function dl(content, filename, mime) {
+  const blob = new Blob([content], { type: mime });
+  const url  = URL.createObjectURL(blob);
+  const a    = Object.assign(document.createElement('a'), { href: url, download: filename });
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
 
-// Listen for data updates from content script
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.action === 'dataCollected') {
-    collectedData = message.data;
-    updateUI();
+function listrender() {
+  if (items.length === 0) {
+    datalist.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">📍</div>
+        <div>No data collected yet</div>
+      </div>`;
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  for (const b of items) {
+    const div = document.createElement('div');
+    div.className = 'data-item';
+    div.innerHTML = `
+      <div class="data-item-name">${esc(b.name)}</div>
+      <div class="data-item-category">📍 ${esc(b.category || 'N/A')}</div>`;
+    frag.appendChild(div);
+  }
+  datalist.replaceChildren(frag);
+}
+
+function render() {
+  cnt.textContent      = items.length;
+  stat_txt.textContent = running ? 'Active' : 'Ready';
+
+  if (running) {
+    indicator.classList.add('active');
+    toggle_txt.textContent      = 'Stop Auto-Collect';
+    toggle_btn.style.background = 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)';
+  } else {
+    indicator.classList.remove('active');
+    toggle_txt.textContent      = 'Start Auto-Collect';
+    toggle_btn.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+  }
+
+  listrender();
+}
+
+async function sync() {
+  const result = await chrome.storage.local.get(['collectedData', 'isCollecting']);
+  items   = result.collectedData || [];
+  running = result.isCollecting  || false;
+  render();
+}
+
+async function mapcheck() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const on_maps = tab && tab.url && tab.url.includes('google.com/maps');
+  document.getElementById('notOnMaps').classList.toggle('show', !on_maps);
+  toggle_btn.disabled = !on_maps;
+}
+
+document.getElementById('toggleCollecting').addEventListener('click', async () => {
+  running = !running;
+  await chrome.storage.local.set({ isCollecting: running });
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (tab && tab.id) {
+    chrome.tabs.sendMessage(
+      tab.id,
+      { action: running ? 'startAutoCollect' : 'stopAutoCollect' }
+    ).catch(() => {});
+  }
+  render();
+});
+
+document.getElementById('exportCSV').addEventListener('click', () => {
+  if (items.length === 0) { alert('No data to export yet!'); return; }
+  dl(mkcsv(items), 'google-maps-data.csv', 'text/csv');
+});
+
+document.getElementById('clearData').addEventListener('click', async () => {
+  if (confirm('Clear all collected data?')) {
+    items = [];
+    await chrome.storage.local.set({ collectedData: [] });
+    render();
   }
 });
 
-// Refresh data periodically
-setInterval(loadData, 1000);
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg.action === 'dataCollected') {
+    items = msg.data;
+    render();
+  }
+});
+
+document.addEventListener('DOMContentLoaded', async () => {
+  await sync();
+  await mapcheck();
+  setInterval(sync, 1000);
+});
